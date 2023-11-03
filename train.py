@@ -3,7 +3,7 @@ import numpy as np
 import os
 import argparse
 os.environ["WANDB_DISABLED"] = "true"
-
+asd
 from transformers.models.auto.configuration_auto import AutoConfig
 from transformers import AutoTokenizer, CLIPFeatureExtractor, AutoModel, AutoModelForCausalLM
 from transformers import Seq2SeqTrainer, default_data_collator, Seq2SeqTrainingArguments
