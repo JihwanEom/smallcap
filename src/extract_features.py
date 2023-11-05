@@ -23,7 +23,7 @@ clip_encoder = CLIPVisionModel.from_pretrained(encoder_name).to(device)
 annotations = json.load(open('data/dataset_coco.json'))['images']
 
 def load_data():
-    data = {'train': [], 'val': []}
+    data = {'train': [], 'val': [], 'test':[]}
 
     for item in annotations:
         file_name = item['filename'].split('_')[-1]
@@ -31,6 +31,9 @@ def load_data():
             data['train'].append({'file_name': file_name, 'cocoid': item['cocoid']})
         elif item['split'] == 'val':
             data['val'].append({'file_name': file_name, 'cocoid': item['cocoid']})
+        elif item['split'] == 'test':
+            data['test'].append({'file_name': file_name, 'cocoid': item['cocoid']})
+            
     return data
 
 def encode_split(data, split):
@@ -52,3 +55,4 @@ data = load_data()
 
 encode_split(data, 'train')
 encode_split(data, 'val')
+encode_split(data, 'test')

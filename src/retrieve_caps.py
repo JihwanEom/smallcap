@@ -7,8 +7,35 @@ import faiss
 import os
 import numpy as np
 from PIL import Image
+from torch.utils.data import Dataset, DataLoader
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+# 1. Create a custom dataset
+class CaptionDataset(Dataset):
+    def __init__(self, captions):
+        self.captions = captions
+    
+    def __len__(self):
+        return len(self.captions)
+    
+    def __getitem__(self, idx):
+        return self.captions[idx]
+
+class ImageDataset(Dataset):
+    def __init__(self, images, image_path, feature_extractor):
+        self.images = images
+        self.image_path = image_path
+        self.feature_extractor = feature_extractor
+    
+    def __len__(self):
+        return len(self.images)
+    
+    def __getitem__(self, idx):
+        image_data = self.images[idx]
+        image = self.feature_extractor(Image.open(os.path.join(self.image_path, image_data['file_name'])))
+        return image
+
 
 def load_coco_data(coco_data_path):
     """We load in all images and only the train captions."""
@@ -48,35 +75,47 @@ def filter_captions(data):
 
     return filtered_image_ids, filtered_captions
 
-def encode_captions(captions, model, device):
+# 2. Use DataLoader in the encoding functions
+def encode_captions(captions, model, device, num_workers=32):
 
-    bs = 256
+    if os.path.exists('encoded_captions.npy'):
+        return np.load('encoded_captions.npy')
+    
+    dataset = CaptionDataset(captions)
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=False, drop_last=False, num_workers=num_workers)
+    
     encoded_captions = []
 
-    for idx in tqdm(range(0, len(captions), bs)):
+    for batch in tqdm(dataloader):
         with torch.no_grad():
-            input_ids = clip.tokenize(captions[idx:idx+bs]).to(device)
+            input_ids = clip.tokenize(batch).to(device)
             encoded_captions.append(model.encode_text(input_ids).cpu().numpy())
 
     encoded_captions = np.concatenate(encoded_captions)
-
+    np.save('encoded_captions.npy', encoded_captions)
+    
     return encoded_captions
 
-def encode_images(images, image_path, model, feature_extractor, device):
+
+def encode_images(images, image_path, model, feature_extractor, device, num_workers=32):
 
     image_ids = [i['image_id'] for i in images]
+
+    if os.path.exists('image_features.npy'):
+        return image_ids, np.load('image_features.npy')
     
-    bs = 64	
+    dataset = ImageDataset(images, image_path, feature_extractor)
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=False, drop_last=False, num_workers=num_workers)
+    
     image_features = []
-    
-    for idx in tqdm(range(0, len(images), bs)):
-        image_input = [feature_extractor(Image.open(os.path.join(image_path, i['file_name'])))
-                                                                    for i in images[idx:idx+bs]]
+
+    for batch in tqdm(dataloader):
         with torch.no_grad():
-            image_features.append(model.encode_image(torch.tensor(np.stack(image_input)).to(device)).cpu().numpy())
+            image_features.append(model.encode_image(torch.tensor(np.stack(batch)).to(device)).cpu().numpy())
 
     image_features = np.concatenate(image_features)
-
+    np.save('image_features.npy', image_features)
+    
     return image_ids, image_features
 
 def get_nns(captions, images, k=15):
@@ -95,7 +134,7 @@ def filter_nns(nns, xb_image_ids, captions, xq_image_ids):
     retrieved_captions = {}
     for nns_list, image_id in zip(nns, xq_image_ids):
         good_nns = []
-        for nn in zip(nns_list):
+        for nn in nns_list:
             if xb_image_ids[nn] == image_id:
                 continue
             good_nns.append(captions[nn])
@@ -132,14 +171,7 @@ def main():
     print('Writing files')
     faiss.write_index(index, "datastore/coco_index")
     json.dump(captions, open('datastore/coco_index_captions.json', 'w'))
-
     json.dump(retrieved_caps, open('data/retrieved_caps_resnet50x64.json', 'w'))
 
 if __name__ == '__main__':
     main()
-
-
-
-
-    
-
